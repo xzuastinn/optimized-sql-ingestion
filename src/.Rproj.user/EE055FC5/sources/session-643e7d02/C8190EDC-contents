@@ -1,0 +1,187 @@
+# ============================================================
+# Program: cleanup2025Data.R
+# Author: Zachary Coates
+# Semester: Spring 2025
+# Description: Deletes all Visit, Bill, and Party records from 2025.
+# Also deletes the last inserted Server and Customer.
+# ============================================================
+
+# Load required libraries
+if (!requireNamespace("DBI", quietly = TRUE)) install.packages("DBI", dependencies = TRUE)
+if (!requireNamespace("RMySQL", quietly = TRUE)) install.packages("RMySQL", dependencies = TRUE)
+
+library(DBI)
+library(RMySQL)
+
+# ============================================================
+# Database Connection Function
+# ============================================================
+
+connect_db <- function() {
+  db_host <- "mysql-3cfa0d7f-northeastern-861d.g.aivencloud.com"
+  db_port <- 15087
+  db_name <- "defaultdb"
+  db_user <- "avnadmin"
+  db_password <- Sys.getenv("DB_PASSWORD")
+  
+  con <- dbConnect(RMySQL::MySQL(),
+                   dbname = db_name,
+                   host = db_host,
+                   port = db_port,
+                   user = db_user,
+                   password = db_password)
+  
+  return(con)
+}
+
+# ============================================================
+# Find and Delete All Visits from 2025
+# ============================================================
+
+delete_2025_data <- function(con) {
+  print("Identifying visits from 2025...")
+  
+  visit_ids <- dbGetQuery(con, "SELECT `Visit ID` FROM Visit WHERE `Visit Date` LIKE '2025%'")$`Visit ID`
+  
+  if (length(visit_ids) == 0) {
+    print("No visits from 2025 found. Database is already clean.")
+  } else {
+    print(paste("Deleting", length(visit_ids), "visits from 2025..."))
+    dbExecute(con, "START TRANSACTION")
+    
+    tryCatch({
+      for (visit_id in visit_ids) {
+        bill_id <- dbGetQuery(con, sprintf("SELECT `Bill ID` FROM Visit WHERE `Visit ID` = %s", visit_id))$`Bill ID`
+        party_id <- dbGetQuery(con, sprintf("SELECT `Party ID` FROM Visit WHERE `Visit ID` = %s", visit_id))$`Party ID`
+        
+        if (!is.na(bill_id)) {
+          dbExecute(con, sprintf("DELETE FROM Bill WHERE `Bill ID` = %s", bill_id))
+        }
+        
+        dbExecute(con, sprintf("DELETE FROM Visit WHERE `Visit ID` = %s", visit_id))
+        
+        if (!is.na(party_id)) {
+          dbExecute(con, sprintf("DELETE FROM Party WHERE `Party ID` = %s", party_id))
+        }
+        
+        print(paste("Deleted Visit ID:", visit_id))
+      }
+      
+      dbExecute(con, "COMMIT")
+      print("All 2025 visits and associated records deleted successfully.")
+      
+    }, error = function(e) {
+      dbExecute(con, "ROLLBACK")
+      print("Error during cleanup. Transaction rolled back.")
+      print(e)
+    })
+  }
+}
+
+# ============================================================
+# Delete Last Inserted Server
+# ============================================================
+
+delete_last_server <- function(con) {
+  print("Identifying last inserted Server...")
+  
+  last_server_id <- dbGetQuery(con, "SELECT `Server ID` FROM Server ORDER BY `Server ID` DESC LIMIT 1")$`Server ID`
+  
+  if (length(last_server_id) == 0) {
+    print("No servers found to delete.")
+  } else {
+    print(paste("Deleting last inserted Server ID:", last_server_id))
+    dbExecute(con, sprintf("DELETE FROM Server WHERE `Server ID` = %s", last_server_id))
+    print("Last server deleted successfully.")
+  }
+}
+
+# ============================================================
+# Delete Last Inserted Customer
+# ============================================================
+
+delete_last_customer <- function(con) {
+  print("Identifying last inserted Customer...")
+  
+  last_customer_id <- dbGetQuery(con, "SELECT `Customer ID` FROM Customer ORDER BY `Customer ID` DESC LIMIT 1")$`Customer ID`
+  
+  if (length(last_customer_id) == 0) {
+    print("No customers found to delete.")
+  } else {
+    print(paste("Deleting last inserted Customer ID:", last_customer_id))
+    dbExecute(con, sprintf("DELETE FROM Customer WHERE `Customer ID` = %s", last_customer_id))
+    print("Last customer deleted successfully.")
+  }
+}
+
+# ============================================================
+# Delete "New Restaurant" and All Related Data
+# ============================================================
+
+delete_new_restaurant <- function(con) {
+  print("Checking for 'New Restaurant'...")
+  
+  restaurant_id <- dbGetQuery(con, "SELECT `Restaurant ID` FROM Restaurant WHERE `Restaurant Name` = 'New Restaurant'")$`Restaurant ID`
+  
+  if (length(restaurant_id) == 0) {
+    print("No restaurant named 'New Restaurant' found.")
+  } else {
+    print(paste("Deleting 'New Restaurant' with ID:", restaurant_id))
+    
+    visit_ids <- dbGetQuery(con, sprintf("SELECT `Visit ID` FROM Visit WHERE `Restaurant ID` = %s", restaurant_id))$`Visit ID`
+    
+    dbExecute(con, "START TRANSACTION")
+    
+    tryCatch({
+      for (visit_id in visit_ids) {
+        bill_id <- dbGetQuery(con, sprintf("SELECT `Bill ID` FROM Visit WHERE `Visit ID` = %s", visit_id))$`Bill ID`
+        party_id <- dbGetQuery(con, sprintf("SELECT `Party ID` FROM Visit WHERE `Visit ID` = %s", visit_id))$`Party ID`
+        
+        if (!is.na(bill_id)) {
+          dbExecute(con, sprintf("DELETE FROM Bill WHERE `Bill ID` = %s", bill_id))
+        }
+        
+        dbExecute(con, sprintf("DELETE FROM Visit WHERE `Visit ID` = %s", visit_id))
+        
+        if (!is.na(party_id)) {
+          dbExecute(con, sprintf("DELETE FROM Party WHERE `Party ID` = %s", party_id))
+        }
+        
+        print(paste("Deleted Visit ID:", visit_id))
+      }
+      
+      # Delete restaurant
+      dbExecute(con, sprintf("DELETE FROM Restaurant WHERE `Restaurant ID` = %s", restaurant_id))
+      
+      dbExecute(con, "COMMIT")
+      print("'New Restaurant' and all related data deleted successfully.")
+      
+    }, error = function(e) {
+      dbExecute(con, "ROLLBACK")
+      print("Error during cleanup. Transaction rolled back.")
+      print(e)
+    })
+  }
+}
+
+# ============================================================
+# Main Execution
+# ============================================================
+
+main <- function() {
+  con <- connect_db()
+  
+  #delete_2025_data(con)
+  #delete_last_server(con)
+  #delete_last_customer(con)
+  delete_new_restaurant(con)
+  
+  # Close the database connection
+  if (dbIsValid(con)) {
+    dbDisconnect(con)
+    print("Database connection closed successfully.")
+  }
+}
+
+# Run the script
+main()

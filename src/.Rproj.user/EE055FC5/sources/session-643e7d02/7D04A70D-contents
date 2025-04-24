@@ -1,0 +1,130 @@
+---
+title: "Analyze Sales"
+subtitle: "CS5200 Practicum I"
+author: "Zachary Coates"
+date: "Spring 2025"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+# Load required libraries
+if (!requireNamespace("DBI", quietly = TRUE)) install.packages("DBI", dependencies = TRUE)
+if (!requireNamespace("RMySQL", quietly = TRUE)) install.packages("RMySQL", dependencies = TRUE)
+if (!requireNamespace("kableExtra", quietly = TRUE)) install.packages("kableExtra", dependencies = TRUE)
+
+library(DBI)
+library(RMySQL)
+library(kableExtra)
+
+#connect to MySQL
+connect_db <- function() {
+  con <- dbConnect(RMySQL::MySQL(),
+                   dbname = "defaultdb",
+                   host = "mysql-3cfa0d7f-northeastern-861d.g.aivencloud.com",
+                   port = 15087,
+                   user = "avnadmin",
+                   password = Sys.getenv("DB_PASSWORD"))
+  return(con)
+}
+
+```
+
+## Analysis by Restaurant
+```{r, echo=FALSE}
+# Function to fetch restaurant-based analysis
+get_restaurant_analysis <- function(con) {
+  query <- "
+      SELECT r.`Restaurant Name` AS Restaurant, 
+             COUNT(v.`Visit ID`) AS Total_Visits, 
+             COUNT(DISTINCT v.`Customer ID`) AS Unique_Customers,
+             COUNT(DISTINCT CASE WHEN c.`Loyalty Member` = 1 THEN v.`Customer ID` END) AS Loyalty_Program_Customers,
+             SUM(b.`Food Bill`) AS Total_Food_Sales,
+             SUM(b.`Alcohol Bill`) AS Total_Alcohol_Sales
+      FROM Restaurant r
+      LEFT JOIN Visit v ON r.`Restaurant ID` = v.`Restaurant ID`
+      LEFT JOIN Customer c ON v.`Customer ID` = c.`Customer ID`
+      LEFT JOIN Bill b ON v.`Bill ID` = b.`Bill ID`
+      GROUP BY r.`Restaurant Name`
+      ORDER BY Total_Food_Sales DESC, Total_Alcohol_Sales DESC;"
+  
+  suppressMessages(suppressWarnings(dbGetQuery(con, query)))
+}
+
+# Connect to DB, fetch data, then disconnect
+con <- connect_db()
+restaurant_data <- get_restaurant_analysis(con)
+invisible(dbDisconnect(con))
+
+# Display table using kableExtra
+kable(restaurant_data, caption = "Restaurant Sales Analysis", 
+      col.names = c("Restaurant", "Total Visits", "Customers", "Loyalty Customers", 
+                    "Total Food Sales ($)", "Total Alcohol Sales ($)")) %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+## Analysis by Year
+
+```{r, echo=FALSE}
+# Function to fetch year-based analysis
+get_yearly_analysis <- function(con) {
+  query <- "
+      SELECT 
+          YEAR(v.`Visit Date`) AS Year, 
+          SUM(b.`Total_Food`) + SUM(b.`Total_Alcohol`) AS Total_Revenue, 
+          AVG(b.`Total_Food`) + AVG(b.`Total_Alcohol`) AS Avg_Per_Party, 
+          AVG(p.`Party Size`) AS Avg_Party_Size
+      FROM Visit v
+      LEFT JOIN (
+          SELECT `Visit ID`, SUM(`Food Bill`) AS Total_Food, SUM(`Alcohol Bill`) AS Total_Alcohol
+          FROM Bill
+          GROUP BY `Visit ID`
+      ) b ON v.`Visit ID` = b.`Visit ID`
+      LEFT JOIN Party p ON v.`Party ID` = p.`Party ID`
+      GROUP BY Year
+      ORDER BY Year;
+      "
+  
+  suppressMessages(suppressWarnings(dbGetQuery(con, query)))
+}
+
+# Connect to DB, get data, then disconnect
+con <- connect_db()
+yearly_data <- get_yearly_analysis(con)
+invisible(dbDisconnect(con))
+
+#Round values
+yearly_data[, -1] <- round(yearly_data[, -1], 2)  # Rounds all numeric columns except 'Year'
+
+# Reshape data: Convert years into columns
+library(tidyr)
+yearly_data_long <- pivot_longer(yearly_data, cols = -Year, names_to = "Metric", values_to = "Value")
+yearly_data_wide <- pivot_wider(yearly_data_long, names_from = Year, values_from = Value)
+
+# Display table using kableExtra
+kable(yearly_data_wide, caption = "Yearly Sales Analysis") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+## Trend by Year
+
+```{r, echo=FALSE}
+# Function to plot revenue trends
+plot_revenue_trend <- function(yearly_data) {
+  plot(yearly_data$Year, yearly_data$Total_Revenue, 
+       type = "o", col = "red", lwd = 2, pch = 16, cex = 1.5, 
+       xlab = "Year", ylab = "Total Revenue ($)", 
+       main = "Trend of Revenue Over the Years")
+  
+  # Add grid lines
+  grid()
+  
+  # Add labels to data points
+  text(yearly_data$Year, yearly_data$Total_Revenue, 
+       labels = round(yearly_data$Total_Revenue, 2), pos = 3, cex = 0.8, col= "black")
+}
+
+# Plot the revenue trend using base R plot()
+plot_revenue_trend(yearly_data)
+```
