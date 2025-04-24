@@ -31,7 +31,7 @@ connect_db <- function() {
 check_missing_bill_ids <- function(con) {
   query <- "SELECT COUNT(*) AS MissingBillIDs FROM Visit WHERE `Bill ID` IS NULL;"
   result <- dbGetQuery(con, query)
-  print(sprintf("🔍 Missing Bill IDs in Visit Table: %d", result$MissingBillIDs))
+  print(sprintf(" Missing Bill IDs in Visit Table: %d", result$MissingBillIDs))
 }
 
 #------------------------------------------------------------
@@ -51,7 +51,7 @@ check_duplicate_food_bills <- function(con) {
   print(sprintf("🔍 Visits with Duplicate Food Bills: %d", nrow(result)))
   
   if (nrow(result) > 0) {
-    print("🔎 Sample of Duplicate Food Bills:")
+    print("Sample of Duplicate Food Bills:")
     print(head(result, 10))
   }
 }
@@ -70,10 +70,10 @@ check_duplicate_alcohol_bills <- function(con) {
   "
   
   result <- dbGetQuery(con, query)
-  print(sprintf("🔍 Visits with Duplicate Alcohol Bills: %d", nrow(result)))
+  print(sprintf(" Visits with Duplicate Alcohol Bills: %d", nrow(result)))
   
   if (nrow(result) > 0) {
-    print("🔎 Sample of Duplicate Alcohol Bills:")
+    print(" Sample of Duplicate Alcohol Bills:")
     print(head(result, 10))
   }
 }
