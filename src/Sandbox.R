@@ -90,7 +90,7 @@ main <- function() {
   check_duplicate_alcohol_bills(con)
   
   dbDisconnect(con)
-  print("✅ Data validation complete.")
+  print(" Data validation complete.")
 }
 
 # Run the script
